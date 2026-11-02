@@ -628,29 +628,30 @@ eagle.onLibraryChanged(async (libraryPath) => {
   showStatus('Library changed - folders reloaded', 'info');
 });
 
+// Leftovers from downloads (partials, fragments) and from tool installs (zips, extract dirs)
+// Only names this plugin creates: <prefix><13-digit ms timestamp>[...]. OS temp is shared, so stay strict.
+const TEMP_LEFTOVER_RE = /^(eagle_ytdlp_|eagle_video_|eagle_thumb_|deno_update_|deno_upd_extract_|deno_extract_|deno_|ffmpeg_extract_|ffmpeg_)\d{13}(\.|$)/;
+const TEMP_STEM_RE = /^(eagle_ytdlp_|eagle_video_)\d+$/;
+
+function removeTempPath(p) {
+  try {
+    fs.rmSync(p, { recursive: true, force: true });
+  } catch (e) {}
+}
+
 function cleanupOldTempFiles() {
   if (!state.tempDir) return;
 
   try {
     const files = fs.readdirSync(state.tempDir);
-    const oldFiles = files.filter(f =>
-      (f.startsWith('eagle_ytdlp_') || f.startsWith('eagle_video_') || f.startsWith('eagle_thumb_')) &&
-      Date.now() - fs.statSync(path.join(state.tempDir, f)).mtimeMs > 3600000 // Older than 1 hour
-    );
-
-    oldFiles.forEach(f => {
+    files.forEach(f => {
+      if (!TEMP_LEFTOVER_RE.test(f)) return;
+      const full = path.join(state.tempDir, f);
       try {
-        fs.unlinkSync(path.join(state.tempDir, f));
-        // eagle.log.info('Cleaned up old temp file:', f);
+        if (Date.now() - fs.statSync(full).mtimeMs > 3600000) removeTempPath(full); // Older than 1 hour
       } catch (e) {}
     });
-
-    // if (oldFiles.length > 0) {
-    //   eagle.log.info(`Cleaned up ${oldFiles.length} old temp files`);
-    // }
-  } catch (e) {
-    // eagle.log.warn('Could not cleanup old temp files:', e.message);
-  }
+  } catch (e) {}
 }
 
 async function loadSettings() {
@@ -2929,14 +2930,20 @@ function cleanupTempFiles(files) {
   if (!files || !Array.isArray(files)) return;
 
   files.forEach(f => {
+    if (!f) return;
     try {
-      if (f && fs.existsSync(f)) {
-        fs.unlinkSync(f);
-        // eagle.log.info('Cleaned up temp file:', path.basename(f));
-      }
-    } catch (e) {
-      // eagle.log.warn('Failed to cleanup temp file:', f, e.message);
-    }
+      if (fs.existsSync(f)) fs.unlinkSync(f);
+    } catch (e) {}
+
+    // A stem entry (no extension) means "everything yt-dlp wrote for this download"
+    const dir = path.dirname(f);
+    const stem = path.basename(f);
+    if (!TEMP_STEM_RE.test(stem)) return;
+    try {
+      fs.readdirSync(dir)
+        .filter(name => name.startsWith(stem + '.'))
+        .forEach(name => removeTempPath(path.join(dir, name)));
+    } catch (e) {}
   });
 }
 

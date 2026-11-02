@@ -317,6 +317,9 @@ async function downloadWithYtDlp(queueItem) {
   const timestamp = Date.now();
   const isAudioOnly = queueItem.format === 'mp3';
   const outputFile = path.join(tempDir, `eagle_ytdlp_${timestamp}.%(ext)s`);
+  // Register the stem so every file yt-dlp writes (.part, .ytdl, .fNNN, fragments,
+  // thumbnails) is swept on success, failure, stall or cancel, not just the final output.
+  queueItem.tempFiles.push(path.join(tempDir, `eagle_ytdlp_${timestamp}`));
 
   const ffmpegPath = await resolveFfmpegPath();
 
